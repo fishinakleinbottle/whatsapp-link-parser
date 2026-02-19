@@ -1,0 +1,11 @@
+include LICENSE
+include README.md
+include pyproject.toml
+recursive-include wa_link_parser *.py *.json
+recursive-exclude tests *
+exclude *.db *.db-shm *.db-wal *.csv
+exclude exclusions.json link_types.json
+exclude CLAUDE.md
+prune sample_data
+prune venv
+prune dist
