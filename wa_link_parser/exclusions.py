@@ -4,19 +4,17 @@ import json
 import os
 from urllib.parse import urlparse
 
-_DEFAULT_EXCLUDED_DOMAINS = frozenset({
-    "meet.google.com",
-    "zoom.us",
-    "teams.microsoft.com",
-    "teams.live.com",
-    "mail.google.com",
-    "outlook.live.com",
-    "outlook.office.com",
-    "we.tl",
-    "bit.ly",
-    "tinyurl.com",
-    "t.co",
-})
+_DEFAULT_EXCLUDED_DOMAINS = frozenset(
+    {
+        "meet.google.com",
+        "zoom.us",
+        "teams.microsoft.com",
+        "teams.live.com",
+        "mail.google.com",
+        "outlook.live.com",
+        "outlook.office.com",
+    }
+)
 
 _cached_excluded_domains = None
 
@@ -89,6 +87,7 @@ def filter_excluded_domains(links, exclude_domains=None):
         return links
 
     return [
-        link for link in links
+        link
+        for link in links
         if _normalize_domain(link["domain"] or "") not in excluded
     ]
