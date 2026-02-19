@@ -2,7 +2,7 @@
 
 Extract, classify, and enrich links from WhatsApp chat exports.
 
-`wa-link-parser` takes a WhatsApp `.txt` export and turns it into a searchable, filterable link catalog. It parses messages, extracts URLs, classifies them by domain (YouTube, Maps, Reddit, etc.), fetches page titles and descriptions, and exports everything to CSV or JSON.
+`wa-link-parser` is a Python library and CLI tool that takes a WhatsApp `.txt` export and turns it into a searchable, filterable link catalog. It parses messages, extracts URLs, classifies them by domain (YouTube, Maps, Reddit, etc.), fetches page titles and descriptions, and exports everything to CSV or JSON.
 
 ## Why this exists
 
@@ -35,6 +35,12 @@ cd wa-link-parser
 pip install -e .
 ```
 
+For development (includes pytest):
+
+```bash
+pip install -e ".[dev]"
+```
+
 ## Quick start
 
 ### As a CLI
@@ -46,8 +52,11 @@ wa-links import chat.txt --group "Bali Trip"
 # Enrich links with page titles and descriptions
 wa-links enrich "Bali Trip"
 
-# Export to CSV
+# Export to CSV (ephemeral domains like meet.google.com excluded by default)
 wa-links export "Bali Trip"
+
+# Export with no exclusions
+wa-links export "Bali Trip" --no-exclude
 
 # Export filtered results
 wa-links export "Bali Trip" --type youtube --format json
@@ -60,20 +69,66 @@ wa-links stats "Bali Trip"
 ### As a library
 
 ```python
-from wa_link_parser import parse_chat_file, extract_links, fetch_metadata
+from wa_link_parser import (
+    parse_chat_file,
+    extract_links,
+    classify_url,
+    fetch_metadata,
+    enrich_links,
+    export_links,
+    filter_excluded_domains,
+)
 
 # Parse a chat export
 messages = parse_chat_file("chat.txt")
 
-# Extract links from a message
+# Extract and classify links from messages
 for msg in messages:
     links = extract_links(msg.raw_text)
     for link in links:
         print(f"{msg.sender}: {link.url} ({link.link_type})")
 
-# Fetch metadata for a URL
+# Fetch metadata for a single URL
 title, description = fetch_metadata("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+
+# Export with default exclusions (meet.google.com, zoom.us, etc. filtered out)
+export_links("Bali Trip")
+
+# Export everything, no exclusions
+export_links("Bali Trip", exclude_domains=[])
+
+# Export with a custom exclusion list
+export_links("Bali Trip", exclude_domains=["zoom.us", "meet.google.com"])
+
+# Filter links directly (works on any list of dicts with a "domain" key)
+all_links = [{"domain": "youtube.com", "link": "..."}, {"domain": "zoom.us", "link": "..."}]
+filtered = filter_excluded_domains(all_links)  # uses defaults
+filtered = filter_excluded_domains(all_links, exclude_domains=[])  # no filtering
+filtered = filter_excluded_domains(all_links, exclude_domains=["zoom.us"])  # custom
 ```
+
+#### Library API
+
+| Function | Description |
+|----------|-------------|
+| `parse_chat_file(path)` | Parse a `.txt` export into `ParsedMessage` objects |
+| `extract_links(text)` | Extract URLs from text, returns `ExtractedLink` objects |
+| `classify_url(url)` | Classify a URL by domain, returns link type string |
+| `fetch_metadata(url)` | Fetch page title and description for a URL |
+| `enrich_links(group_id)` | Enrich all unenriched links for a group in the DB |
+| `export_links(group, ...)` | Export links to CSV/JSON with filters and exclusions |
+| `filter_excluded_domains(links, ...)` | Filter link dicts by domain exclusion list |
+| `reset_exclusion_cache()` | Clear cached exclusion domains (for testing) |
+
+#### Data classes
+
+| Class | Fields |
+|-------|--------|
+| `ParsedMessage` | `timestamp`, `sender`, `raw_text`, `is_system` |
+| `ExtractedLink` | `url`, `domain`, `link_type` |
+| `ImportStats` | `new_messages`, `skipped_messages`, `links_extracted`, `contacts_created` |
+
+**No Click dependency in library modules** -- the CLI layer (`wa_link_parser.cli`) depends on Click, but all library functions use callbacks (`on_progress`, `prompt_fn`) instead, so you can use the library without Click.
 
 ## Supported formats
 
@@ -124,6 +179,7 @@ Export links to CSV or JSON with optional filters.
 wa-links export "Group Name"
 wa-links export "Group Name" --format json
 wa-links export "Group Name" --type youtube --sender "Alice" --after 2025-10-01
+wa-links export "Group Name" --no-exclude
 ```
 
 | Flag | Description |
@@ -135,6 +191,7 @@ wa-links export "Group Name" --type youtube --sender "Alice" --after 2025-10-01
 | `--before` | Only links before this date (`YYYY-MM-DD`) |
 | `--domain` | Filter by domain (substring match) |
 | `--format` | `csv` (default) or `json` |
+| `--no-exclude` | Disable default domain exclusions |
 
 ### `stats`
 
@@ -197,6 +254,54 @@ Create a `link_types.json` in your working directory to add or override mappings
   "substack.com": "newsletter"
 }
 ```
+
+## Domain exclusions
+
+By default, `export` filters out ephemeral/temporary links that clutter exports:
+
+| Category | Domains |
+|----------|---------|
+| Video calls | meet.google.com, zoom.us, teams.microsoft.com, teams.live.com |
+| Email | mail.google.com, outlook.live.com, outlook.office.com |
+| URL shorteners | bit.ly, tinyurl.com, t.co, we.tl |
+
+All links are still stored in the database -- exclusions only apply at export time.
+
+### Custom exclusions
+
+Create an `exclusions.json` in your working directory. It's a JSON array of domains to add. Prefix with `!` to remove a built-in default:
+
+```json
+[
+  "calendly.com",
+  "!bit.ly"
+]
+```
+
+This adds `calendly.com` to the exclusion list and removes `bit.ly` from it.
+
+### Programmatic control
+
+```python
+# Default exclusions applied
+export_links("Group")
+
+# No exclusions
+export_links("Group", exclude_domains=[])
+
+# Custom exclusion list (replaces defaults entirely)
+export_links("Group", exclude_domains=["zoom.us", "calendly.com"])
+```
+
+## Storage
+
+Data is stored in a SQLite database (WAL mode). Set the path with:
+
+```bash
+export WA_LINKS_DB_PATH=/path/to/wa_links.db
+```
+
+Defaults to `wa_links.db` in the current directory.
 
 ## Running tests
 

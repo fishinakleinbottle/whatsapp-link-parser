@@ -222,16 +222,19 @@ def enrich(group_name):
 @click.option("--domain", default=None, help="Filter by domain (substring match)")
 @click.option("--format", "fmt", type=click.Choice(["csv", "json"]), default="csv",
               help="Output format")
-def export(group_name, output, link_type, sender, after, before, domain, fmt):
+@click.option("--no-exclude", is_flag=True, help="Disable default domain exclusions")
+def export(group_name, output, link_type, sender, after, before, domain, fmt, no_exclude):
     """Export links for a group to CSV or JSON."""
     group = db.get_group_by_name(group_name)
     if not group:
         click.echo(f'Group "{group_name}" not found.')
         return
 
+    exclude_domains = [] if no_exclude else None
     output_path, count = export_links(
         group_name, output_path=output, fmt=fmt,
         link_type=link_type, sender=sender, after=after, before=before, domain=domain,
+        exclude_domains=exclude_domains,
     )
     click.echo(f"Exported {count} links to {output_path}")
 

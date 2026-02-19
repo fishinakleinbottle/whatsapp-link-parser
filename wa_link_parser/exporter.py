@@ -2,6 +2,7 @@ import csv
 import json
 
 from wa_link_parser import db
+from wa_link_parser.exclusions import filter_excluded_domains
 
 
 EXPORT_COLUMNS = ["Sender", "Link", "Title", "Type", "Caption", "Context",
@@ -11,7 +12,8 @@ EXPORT_KEYS = ["sender", "link", "title", "type", "caption", "context",
 
 
 def export_links(group_name, output_path=None, fmt="csv",
-                 link_type=None, sender=None, after=None, before=None, domain=None):
+                 link_type=None, sender=None, after=None, before=None, domain=None,
+                 exclude_domains=None):
     """Export links for a group to CSV or JSON, with optional filters.
 
     Args:
@@ -23,6 +25,10 @@ def export_links(group_name, output_path=None, fmt="csv",
         after: Filter links after this date (YYYY-MM-DD).
         before: Filter links before this date (YYYY-MM-DD).
         domain: Filter by domain (substring match).
+        exclude_domains: Controls domain exclusion:
+            - None: use default exclusion list (built-in + exclusions.json)
+            - []: no exclusions, export all links
+            - ["x.com", ...]: use this explicit list
 
     Returns:
         Tuple of (output_path, count) where count is number of links exported.
@@ -44,6 +50,8 @@ def export_links(group_name, output_path=None, fmt="csv",
         )
     else:
         links = db.get_links_for_export(group["id"])
+
+    links = filter_excluded_domains(links, exclude_domains)
 
     if output_path is None:
         safe_name = group_name.replace(" ", "_")
