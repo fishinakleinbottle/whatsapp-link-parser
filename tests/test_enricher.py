@@ -1,7 +1,7 @@
 from unittest.mock import patch, MagicMock
 
-import db
-from enricher import _fetch_metadata, enrich_links
+from wa_link_parser import db
+from wa_link_parser.enricher import fetch_metadata, enrich_links
 
 
 class TestFetchMetadata:
@@ -12,25 +12,25 @@ class TestFetchMetadata:
             <meta property="og:description" content="A great description">
         </head><body></body></html>
         """
-        with patch("enricher.requests.get") as mock_get:
+        with patch("wa_link_parser.enricher.requests.get") as mock_get:
             mock_resp = MagicMock()
             mock_resp.text = html
             mock_resp.raise_for_status = MagicMock()
             mock_get.return_value = mock_resp
 
-            title, desc = _fetch_metadata("https://example.com")
+            title, desc = fetch_metadata("https://example.com")
             assert title == "My Page Title"
             assert desc == "A great description"
 
     def test_falls_back_to_title_tag(self):
         html = "<html><head><title>Fallback Title</title></head><body></body></html>"
-        with patch("enricher.requests.get") as mock_get:
+        with patch("wa_link_parser.enricher.requests.get") as mock_get:
             mock_resp = MagicMock()
             mock_resp.text = html
             mock_resp.raise_for_status = MagicMock()
             mock_get.return_value = mock_resp
 
-            title, desc = _fetch_metadata("https://example.com")
+            title, desc = fetch_metadata("https://example.com")
             assert title == "Fallback Title"
             assert desc is None
 
@@ -41,45 +41,45 @@ class TestFetchMetadata:
             <meta name="description" content="Meta desc">
         </head><body></body></html>
         """
-        with patch("enricher.requests.get") as mock_get:
+        with patch("wa_link_parser.enricher.requests.get") as mock_get:
             mock_resp = MagicMock()
             mock_resp.text = html
             mock_resp.raise_for_status = MagicMock()
             mock_get.return_value = mock_resp
 
-            title, desc = _fetch_metadata("https://example.com")
+            title, desc = fetch_metadata("https://example.com")
             assert title == "Page"
             assert desc == "Meta desc"
 
     def test_truncates_long_title(self):
         long_title = "A" * 300
         html = f'<html><head><title>{long_title}</title></head><body></body></html>'
-        with patch("enricher.requests.get") as mock_get:
+        with patch("wa_link_parser.enricher.requests.get") as mock_get:
             mock_resp = MagicMock()
             mock_resp.text = html
             mock_resp.raise_for_status = MagicMock()
             mock_get.return_value = mock_resp
 
-            title, _ = _fetch_metadata("https://example.com")
+            title, _ = fetch_metadata("https://example.com")
             assert len(title) == 200
 
     def test_handles_request_failure(self):
         import requests as req
-        with patch("enricher.requests.get", side_effect=req.ConnectionError("fail")):
-            with patch("enricher.RETRY_DELAY", 0):
-                title, desc = _fetch_metadata("https://example.com")
+        with patch("wa_link_parser.enricher.requests.get", side_effect=req.ConnectionError("fail")):
+            with patch("wa_link_parser.enricher.RETRY_DELAY", 0):
+                title, desc = fetch_metadata("https://example.com")
                 assert title is None
                 assert desc is None
 
     def test_adds_scheme_if_missing(self):
         html = "<html><head><title>No Scheme</title></head><body></body></html>"
-        with patch("enricher.requests.get") as mock_get:
+        with patch("wa_link_parser.enricher.requests.get") as mock_get:
             mock_resp = MagicMock()
             mock_resp.text = html
             mock_resp.raise_for_status = MagicMock()
             mock_get.return_value = mock_resp
 
-            _fetch_metadata("example.com/page")
+            fetch_metadata("example.com/page")
             call_url = mock_get.call_args[0][0]
             assert call_url.startswith("https://")
 
@@ -100,8 +100,8 @@ class TestEnrichLinks:
             ])
 
         html = "<html><head><title>Example</title></head><body></body></html>"
-        with patch("enricher.requests.get") as mock_get, \
-             patch("enricher.RATE_LIMIT_DELAY", 0):
+        with patch("wa_link_parser.enricher.requests.get") as mock_get, \
+             patch("wa_link_parser.enricher.RATE_LIMIT_DELAY", 0):
             mock_resp = MagicMock()
             mock_resp.text = html
             mock_resp.raise_for_status = MagicMock()
@@ -131,7 +131,7 @@ class TestEnrichLinks:
             ])
             db.update_link_metadata(conn, 1, "Already Set", "Desc")
 
-        with patch("enricher.requests.get") as mock_get:
+        with patch("wa_link_parser.enricher.requests.get") as mock_get:
             count = enrich_links(group_id)
 
         assert count == 0

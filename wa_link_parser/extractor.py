@@ -1,9 +1,10 @@
 import json
 import os
+from importlib import resources
 from typing import List
 from urllib.parse import urlparse
 
-from models import ExtractedLink
+from wa_link_parser.models import ExtractedLink
 
 _DEFAULT_LINK_TYPE_MAP = {
     "youtube.com": "youtube",
@@ -98,8 +99,12 @@ def _normalize_domain(domain):
     return domain.lstrip("www.").lstrip(".")
 
 
-def _classify_url(url):
-    """Classify a URL by its domain. Returns (domain, link_type)."""
+def classify_url(url):
+    """Classify a URL by its domain.
+
+    Returns (domain, link_type) where link_type is a category string
+    like 'youtube', 'travel', 'shopping', or 'general' for unknown domains.
+    """
     link_type_map = _get_link_type_map()
 
     # Ensure the URL has a scheme for urlparse
@@ -122,14 +127,21 @@ def _classify_url(url):
     return domain, "general"
 
 
+# Keep backwards-compatible alias
+_classify_url = classify_url
+
+
 def extract_links(text: str) -> List[ExtractedLink]:
-    """Extract all URLs from text and classify them."""
+    """Extract all URLs from text and classify them by domain.
+
+    Returns a list of ExtractedLink objects, each with url, domain, and link_type.
+    """
     extractor = _get_extractor()
     urls = extractor.find_urls(text, only_unique=True)
 
     results = []
     for url in urls:
-        domain, link_type = _classify_url(url)
+        domain, link_type = classify_url(url)
         results.append(ExtractedLink(url=url, domain=domain, link_type=link_type))
 
     return results

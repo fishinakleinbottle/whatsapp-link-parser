@@ -5,7 +5,7 @@ from typing import Optional
 
 @dataclass
 class ParsedMessage:
-    """Output of the parser — not yet in DB."""
+    """Output of the parser -- not yet in DB."""
     timestamp: datetime
     sender: str          # display name as in export
     raw_text: str

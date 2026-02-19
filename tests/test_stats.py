@@ -1,4 +1,4 @@
-import db
+from wa_link_parser import db
 
 
 def _setup_group_with_data(conn, group_id):

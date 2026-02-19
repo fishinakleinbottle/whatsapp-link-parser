@@ -1,5 +1,7 @@
 # Database
 *.db
+*.db-shm
+*.db-wal
 
 # Python
 __pycache__/
@@ -22,6 +24,7 @@ env/
 
 # Output
 *_links.csv
+*_links.json
 
 # OS
 .DS_Store

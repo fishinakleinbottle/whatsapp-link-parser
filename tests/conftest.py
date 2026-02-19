@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-import db
+from wa_link_parser import db
 
 
 @pytest.fixture

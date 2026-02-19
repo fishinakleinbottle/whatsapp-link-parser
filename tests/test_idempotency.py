@@ -1,7 +1,7 @@
-import db
-from contact_resolver import resolve_contacts_for_import
-from extractor import extract_links
-from parser import parse_chat_file
+from wa_link_parser import db
+from wa_link_parser.contact_resolver import resolve_contacts_for_import
+from wa_link_parser.extractor import extract_links
+from wa_link_parser.parser import parse_chat_file
 
 
 class TestIdempotency:

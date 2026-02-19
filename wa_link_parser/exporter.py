@@ -1,7 +1,7 @@
 import csv
 import json
 
-import db
+from wa_link_parser import db
 
 
 EXPORT_COLUMNS = ["Sender", "Link", "Title", "Type", "Caption", "Context",
@@ -14,7 +14,18 @@ def export_links(group_name, output_path=None, fmt="csv",
                  link_type=None, sender=None, after=None, before=None, domain=None):
     """Export links for a group to CSV or JSON, with optional filters.
 
-    Returns the output file path and number of links exported.
+    Args:
+        group_name: Name of the WhatsApp group.
+        output_path: Output file path (auto-generated if None).
+        fmt: Output format, 'csv' or 'json'.
+        link_type: Filter by link type (e.g., 'youtube').
+        sender: Filter by sender name (substring match).
+        after: Filter links after this date (YYYY-MM-DD).
+        before: Filter links before this date (YYYY-MM-DD).
+        domain: Filter by domain (substring match).
+
+    Returns:
+        Tuple of (output_path, count) where count is number of links exported.
     """
     group = db.get_group_by_name(group_name)
     if not group:
@@ -63,8 +74,3 @@ def _write_json(links, output_path):
 
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(records, f, indent=2, ensure_ascii=False)
-
-
-# Keep backwards-compatible alias
-def export_links_to_csv(group_name, output_path=None):
-    return export_links(group_name, output_path=output_path, fmt="csv")

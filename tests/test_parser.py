@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from parser import parse_chat_file
+from wa_link_parser.parser import parse_chat_file
 
 
 class TestParser:

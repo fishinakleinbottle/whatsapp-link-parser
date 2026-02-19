@@ -1,12 +1,15 @@
 import click
 
-import db
-from contact_resolver import resolve_contacts_for_import, resolve_unresolved_contacts
-from enricher import enrich_links
-from exporter import export_links
-from extractor import extract_links
-from models import ImportStats
-from parser import parse_chat_file
+from wa_link_parser import db
+from wa_link_parser.contact_resolver import (
+    find_similar_contacts,
+    resolve_contacts_for_import,
+)
+from wa_link_parser.enricher import enrich_links
+from wa_link_parser.exporter import export_links
+from wa_link_parser.extractor import extract_links
+from wa_link_parser.models import ImportStats
+from wa_link_parser.parser import parse_chat_file
 
 
 def _build_context(messages, idx, time_window=60):
@@ -44,6 +47,42 @@ def _build_context(messages, idx, time_window=60):
             parts.append(msg.raw_text.strip())
 
     return " | ".join(parts)
+
+
+def _click_prompt_for_contact(display_name, similar):
+    """Interactive contact resolution prompt using Click.
+
+    Returns contact_id to merge with, None to create new, or 'skip'.
+    """
+    click.echo(f'\nNew contact found: "{display_name}"')
+    click.echo("Similar existing contacts:")
+
+    for i, (score, contact) in enumerate(similar, 1):
+        pct = int(score * 100)
+        click.echo(f"  {i}. {contact['canonical_name']} ({pct}% match)")
+
+    click.echo(f"\nOptions:")
+    click.echo(f"  [1-{len(similar)}] This is the same person as #N")
+    click.echo(f"  [n]   This is a new person")
+    click.echo(f"  [s]   Skip for now")
+
+    while True:
+        choice = click.prompt("Choice", type=str).strip().lower()
+
+        if choice == "n":
+            return None
+
+        if choice == "s":
+            return "skip"
+
+        try:
+            idx = int(choice)
+            if 1 <= idx <= len(similar):
+                return similar[idx - 1][1]["id"]
+        except ValueError:
+            pass
+
+        click.echo("Invalid choice, please try again.")
 
 
 @click.group()
@@ -91,7 +130,10 @@ def import_chat(file_path, group_name, do_enrich):
 
     with db.get_connection() as conn:
         # Resolve contacts
-        contact_map = resolve_contacts_for_import(group_id, sender_names, conn)
+        contact_map = resolve_contacts_for_import(
+            group_id, sender_names, conn,
+            prompt_fn=_click_prompt_for_contact,
+        )
         system_contact_id = db.get_system_contact_id(conn)
 
         # Import messages with progress bar
@@ -134,8 +176,27 @@ def import_chat(file_path, group_name, do_enrich):
 
     if do_enrich:
         click.echo()
-        enriched = enrich_links(group_id)
-        click.echo(f"  {enriched} links enriched with metadata")
+        _enrich_with_progress(group_id)
+
+
+def _enrich_with_progress(group_id):
+    """Enrich links with a Click progress bar."""
+    links = db.get_unenriched_links(group_id)
+    if not links:
+        click.echo("No unenriched links found.")
+        return 0
+
+    bar = click.progressbar(length=len(links), label="Enriching", show_pos=True)
+    enriched = [0]
+
+    def on_progress(current, total):
+        bar.update(1)
+
+    with bar:
+        enriched_count = enrich_links(group_id, on_progress=on_progress)
+
+    click.echo(f"  {enriched_count} links enriched with metadata")
+    return enriched_count
 
 
 @cli.command("enrich")
@@ -147,7 +208,7 @@ def enrich(group_name):
         click.echo(f'Group "{group_name}" not found.')
         return
 
-    enriched = enrich_links(group["id"])
+    enriched = _enrich_with_progress(group["id"])
     click.echo(f"\nEnriched {enriched} links with metadata.")
 
 
@@ -262,7 +323,7 @@ def contacts(group_name, resolve):
         return
 
     if resolve:
-        resolve_unresolved_contacts(group["id"])
+        _resolve_unresolved_contacts(group["id"])
         return
 
     contact_list = db.get_contacts_for_group(group["id"])
@@ -277,5 +338,66 @@ def contacts(group_name, resolve):
             click.echo(f"    Aliases: {c['aliases']}")
 
 
-if __name__ == "__main__":
+def _resolve_unresolved_contacts(group_id):
+    """Interactive resolution of unresolved contacts for the 'contacts --resolve' command."""
+    unresolved = db.get_unresolved_contacts(group_id)
+    if not unresolved:
+        click.echo("No unresolved contacts.")
+        return
+
+    existing_contacts = db.get_contacts_for_group(group_id)
+
+    click.echo(f"\n{len(unresolved)} unresolved contact(s):\n")
+
+    for contact in unresolved:
+        click.echo(f'Resolving: "{contact["display_name"]}" (current name: {contact["canonical_name"]})')
+        click.echo("Existing contacts:")
+
+        resolved_contacts = [c for c in existing_contacts if c["resolved"]]
+        for i, c in enumerate(resolved_contacts, 1):
+            click.echo(f"  {i}. {c['canonical_name']} (aliases: {c['aliases']})")
+
+        click.echo(f"\n  [1-{len(resolved_contacts)}] Merge with existing contact")
+        click.echo(f"  [k]   Keep as-is (mark resolved)")
+
+        while True:
+            choice = click.prompt("Choice", type=str).strip().lower()
+
+            if choice == "k":
+                db.resolve_contact(contact["id"], contact["canonical_name"])
+                click.echo(f"  Kept as {contact['canonical_name']}")
+                break
+
+            try:
+                idx = int(choice)
+                if 1 <= idx <= len(resolved_contacts):
+                    target = resolved_contacts[idx - 1]
+                    # Reassign messages and alias to the target contact
+                    with db.get_connection() as conn:
+                        conn.execute(
+                            "UPDATE message SET contact_id = ? WHERE contact_id = ?",
+                            (target["id"], contact["id"])
+                        )
+                        conn.execute(
+                            "UPDATE contact_alias SET contact_id = ? WHERE contact_id = ?",
+                            (target["id"], contact["id"])
+                        )
+                        conn.execute(
+                            "DELETE FROM contact WHERE id = ?",
+                            (contact["id"],)
+                        )
+                    click.echo(f"  Merged with {target['canonical_name']}")
+                    break
+            except ValueError:
+                pass
+
+            click.echo("Invalid choice, please try again.")
+
+
+def main():
+    """Entry point for the CLI."""
     cli()
+
+
+if __name__ == "__main__":
+    main()

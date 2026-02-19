@@ -2,8 +2,8 @@ import csv
 import json
 import os
 
-import db
-from exporter import export_links
+from wa_link_parser import db
+from wa_link_parser.exporter import export_links
 
 
 def _setup_group_with_links(conn, group_id):
