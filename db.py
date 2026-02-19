@@ -28,6 +28,19 @@ def get_connection():
         conn.close()
 
 
+def _column_exists(conn, table, column):
+    """Check if a column exists in a table using PRAGMA table_info."""
+    cols = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(c["name"] == column for c in cols)
+
+
+def _migrate_link_table(conn):
+    """Add new columns to the link table if they don't exist."""
+    for col in ("title", "description", "context"):
+        if not _column_exists(conn, "link", col):
+            conn.execute(f"ALTER TABLE link ADD COLUMN {col} TEXT")
+
+
 def init_db():
     """Create all tables and ensure the __system__ sentinel contact exists."""
     with get_connection() as conn:
@@ -70,10 +83,16 @@ def init_db():
                 url TEXT NOT NULL,
                 domain TEXT,
                 link_type TEXT,
+                title TEXT,
+                description TEXT,
+                context TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(message_id, url)
             );
         """)
+
+        # Migrate existing databases
+        _migrate_link_table(conn)
 
         # Ensure __system__ contact exists
         row = conn.execute(
@@ -229,10 +248,32 @@ def insert_message(conn, group_id, contact_id, timestamp, raw_text, message_hash
 
 
 def insert_links_batch(conn, links):
-    """Insert multiple links using executemany. links is a list of tuples (message_id, url, domain, link_type)."""
+    """Insert multiple links. links is a list of tuples (message_id, url, domain, link_type, context)."""
     conn.executemany(
-        "INSERT OR IGNORE INTO link (message_id, url, domain, link_type) VALUES (?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO link (message_id, url, domain, link_type, context) VALUES (?, ?, ?, ?, ?)",
         links
+    )
+
+
+# --- Enrichment operations ---
+
+def get_unenriched_links(group_id):
+    """Return links where title IS NULL, for a given group."""
+    with get_connection() as conn:
+        return conn.execute("""
+            SELECT l.id, l.url
+            FROM link l
+            JOIN message m ON m.id = l.message_id
+            WHERE m.group_id = ? AND l.title IS NULL
+            ORDER BY l.id
+        """, (group_id,)).fetchall()
+
+
+def update_link_metadata(conn, link_id, title, description):
+    """Set title and description on a link."""
+    conn.execute(
+        "UPDATE link SET title = ?, description = ? WHERE id = ?",
+        (title, description, link_id)
     )
 
 
@@ -245,13 +286,175 @@ def get_links_for_export(group_id):
             SELECT
                 c.canonical_name AS sender,
                 l.url AS link,
+                l.title,
                 l.link_type AS type,
                 m.raw_text AS caption,
+                l.context,
                 m.timestamp,
-                l.domain
+                l.domain,
+                l.description
             FROM link l
             JOIN message m ON m.id = l.message_id
             JOIN contact c ON c.id = m.contact_id
             WHERE m.group_id = ?
             ORDER BY m.timestamp DESC
+        """, (group_id,)).fetchall()
+
+
+def get_links_for_export_filtered(group_id, link_type=None, sender=None,
+                                  after=None, before=None, domain=None):
+    """Return links for a group with optional filters."""
+    query = """
+        SELECT
+            c.canonical_name AS sender,
+            l.url AS link,
+            l.title,
+            l.link_type AS type,
+            m.raw_text AS caption,
+            l.context,
+            m.timestamp,
+            l.domain,
+            l.description
+        FROM link l
+        JOIN message m ON m.id = l.message_id
+        JOIN contact c ON c.id = m.contact_id
+        WHERE m.group_id = ?
+    """
+    params = [group_id]
+
+    if link_type:
+        query += " AND l.link_type = ?"
+        params.append(link_type)
+    if sender:
+        query += " AND c.canonical_name LIKE ?"
+        params.append(f"%{sender}%")
+    if after:
+        query += " AND m.timestamp >= ?"
+        params.append(after)
+    if before:
+        query += " AND m.timestamp <= ?"
+        params.append(before)
+    if domain:
+        query += " AND l.domain LIKE ?"
+        params.append(f"%{domain}%")
+
+    query += " ORDER BY m.timestamp DESC"
+
+    with get_connection() as conn:
+        return conn.execute(query, params).fetchall()
+
+
+# --- Reset operations ---
+
+def delete_group_data(group_id):
+    """Delete all data for a group: links, messages, contact_aliases, and orphaned contacts.
+
+    Does NOT delete the group row itself so the name can be reused on reimport.
+    """
+    with get_connection() as conn:
+        # Delete links (child of message)
+        conn.execute("""
+            DELETE FROM link WHERE message_id IN (
+                SELECT id FROM message WHERE group_id = ?
+            )
+        """, (group_id,))
+
+        # Delete messages
+        conn.execute("DELETE FROM message WHERE group_id = ?", (group_id,))
+
+        # Get contact IDs for this group before deleting aliases
+        contact_ids = [row["contact_id"] for row in conn.execute(
+            "SELECT DISTINCT contact_id FROM contact_alias WHERE group_id = ?",
+            (group_id,)
+        ).fetchall()]
+
+        # Delete aliases for this group
+        conn.execute("DELETE FROM contact_alias WHERE group_id = ?", (group_id,))
+
+        # Delete orphaned contacts (no remaining aliases, not __system__)
+        for cid in contact_ids:
+            remaining = conn.execute(
+                "SELECT 1 FROM contact_alias WHERE contact_id = ?", (cid,)
+            ).fetchone()
+            if remaining is None:
+                conn.execute(
+                    "DELETE FROM contact WHERE id = ? AND canonical_name != ?",
+                    (cid, SYSTEM_CONTACT_NAME)
+                )
+
+        # Delete the group row itself
+        conn.execute("DELETE FROM whatsapp_group WHERE id = ?", (group_id,))
+
+
+# --- Stats queries ---
+
+def get_group_summary(group_id):
+    """Return message count, link count, system message count, contact count."""
+    with get_connection() as conn:
+        row = conn.execute("""
+            SELECT
+                COUNT(*) AS message_count,
+                SUM(CASE WHEN is_system_message THEN 1 ELSE 0 END) AS system_count
+            FROM message
+            WHERE group_id = ?
+        """, (group_id,)).fetchone()
+
+        link_count = conn.execute("""
+            SELECT COUNT(*) AS cnt
+            FROM link l
+            JOIN message m ON m.id = l.message_id
+            WHERE m.group_id = ?
+        """, (group_id,)).fetchone()["cnt"]
+
+        contact_count = conn.execute("""
+            SELECT COUNT(DISTINCT contact_id) AS cnt
+            FROM contact_alias
+            WHERE group_id = ?
+        """, (group_id,)).fetchone()["cnt"]
+
+        return {
+            "message_count": row["message_count"],
+            "system_count": row["system_count"],
+            "link_count": link_count,
+            "contact_count": contact_count,
+        }
+
+
+def get_link_stats_by_sender(group_id):
+    """COUNT links GROUP BY sender, ordered by count descending."""
+    with get_connection() as conn:
+        return conn.execute("""
+            SELECT c.canonical_name AS sender, COUNT(*) AS count
+            FROM link l
+            JOIN message m ON m.id = l.message_id
+            JOIN contact c ON c.id = m.contact_id
+            WHERE m.group_id = ?
+            GROUP BY c.id
+            ORDER BY count DESC
+        """, (group_id,)).fetchall()
+
+
+def get_link_stats_by_type(group_id):
+    """COUNT links GROUP BY link_type, ordered by count descending."""
+    with get_connection() as conn:
+        return conn.execute("""
+            SELECT l.link_type AS type, COUNT(*) AS count
+            FROM link l
+            JOIN message m ON m.id = l.message_id
+            WHERE m.group_id = ?
+            GROUP BY l.link_type
+            ORDER BY count DESC
+        """, (group_id,)).fetchall()
+
+
+def get_link_stats_by_domain(group_id):
+    """COUNT links GROUP BY domain, ordered by count descending."""
+    with get_connection() as conn:
+        return conn.execute("""
+            SELECT l.domain, COUNT(*) AS count
+            FROM link l
+            JOIN message m ON m.id = l.message_id
+            WHERE m.group_id = ?
+            GROUP BY l.domain
+            ORDER BY count DESC
         """, (group_id,)).fetchall()

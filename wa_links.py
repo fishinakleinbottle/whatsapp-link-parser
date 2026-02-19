@@ -2,10 +2,48 @@ import click
 
 import db
 from contact_resolver import resolve_contacts_for_import, resolve_unresolved_contacts
-from exporter import export_links_to_csv
+from enricher import enrich_links
+from exporter import export_links
 from extractor import extract_links
 from models import ImportStats
 from parser import parse_chat_file
+
+
+def _build_context(messages, idx, time_window=60):
+    """Gather adjacent messages from same sender within time_window seconds.
+
+    Looks backward and forward from the message at idx for messages from the
+    same sender within the time window. Returns concatenated text separated by ' | '.
+    """
+    target = messages[idx]
+    parts = []
+
+    # Look backward
+    for i in range(idx - 1, -1, -1):
+        msg = messages[i]
+        if msg.is_system:
+            continue
+        delta = abs((target.timestamp - msg.timestamp).total_seconds())
+        if delta > time_window:
+            break
+        if msg.sender == target.sender:
+            parts.insert(0, msg.raw_text.strip())
+
+    # Current message
+    parts.append(target.raw_text.strip())
+
+    # Look forward
+    for i in range(idx + 1, len(messages)):
+        msg = messages[i]
+        if msg.is_system:
+            continue
+        delta = abs((msg.timestamp - target.timestamp).total_seconds())
+        if delta > time_window:
+            break
+        if msg.sender == target.sender:
+            parts.append(msg.raw_text.strip())
+
+    return " | ".join(parts)
 
 
 @click.group()
@@ -17,7 +55,8 @@ def cli():
 @cli.command("import")
 @click.argument("file_path")
 @click.option("--group", "group_name", default=None, help="Group name (creates if new)")
-def import_chat(file_path, group_name):
+@click.option("--enrich", "do_enrich", is_flag=True, help="Enrich links after import")
+def import_chat(file_path, group_name, do_enrich):
     """Import a WhatsApp chat export file."""
     # Resolve group
     if group_name is None:
@@ -55,55 +94,146 @@ def import_chat(file_path, group_name):
         contact_map = resolve_contacts_for_import(group_id, sender_names, conn)
         system_contact_id = db.get_system_contact_id(conn)
 
-        # Import messages
-        for msg in messages:
-            timestamp_iso = msg.timestamp.isoformat()
-            message_hash = db.compute_message_hash(timestamp_iso, msg.sender, msg.raw_text)
+        # Import messages with progress bar
+        with click.progressbar(messages, label="Importing", show_pos=True) as bar:
+            for idx, msg in enumerate(bar):
+                timestamp_iso = msg.timestamp.isoformat()
+                message_hash = db.compute_message_hash(timestamp_iso, msg.sender, msg.raw_text)
 
-            if db.message_hash_exists(conn, message_hash):
-                stats.skipped_messages += 1
-                continue
+                if db.message_hash_exists(conn, message_hash):
+                    stats.skipped_messages += 1
+                    continue
 
-            if msg.is_system:
-                contact_id = system_contact_id
-            else:
-                contact_id = contact_map[msg.sender]
+                if msg.is_system:
+                    contact_id = system_contact_id
+                else:
+                    contact_id = contact_map[msg.sender]
 
-            message_id = db.insert_message(
-                conn, group_id, contact_id, timestamp_iso,
-                msg.raw_text, message_hash, msg.is_system
-            )
-            stats.new_messages += 1
+                message_id = db.insert_message(
+                    conn, group_id, contact_id, timestamp_iso,
+                    msg.raw_text, message_hash, msg.is_system
+                )
+                stats.new_messages += 1
 
-            # Extract and store links (skip system messages)
-            if not msg.is_system:
-                links = extract_links(msg.raw_text)
-                if links:
-                    link_rows = [
-                        (message_id, link.url, link.domain, link.link_type)
-                        for link in links
-                    ]
-                    db.insert_links_batch(conn, link_rows)
-                    stats.links_extracted += len(links)
+                # Extract and store links (skip system messages)
+                if not msg.is_system:
+                    links = extract_links(msg.raw_text)
+                    if links:
+                        context = _build_context(messages, idx)
+                        link_rows = [
+                            (message_id, link.url, link.domain, link.link_type, context)
+                            for link in links
+                        ]
+                        db.insert_links_batch(conn, link_rows)
+                        stats.links_extracted += len(links)
 
     click.echo(f"\nImport complete for group \"{group_name}\":")
     click.echo(f"  {stats.new_messages} new messages imported")
     click.echo(f"  {stats.skipped_messages} duplicates skipped")
     click.echo(f"  {stats.links_extracted} links extracted")
 
+    if do_enrich:
+        click.echo()
+        enriched = enrich_links(group_id)
+        click.echo(f"  {enriched} links enriched with metadata")
 
-@cli.command("export")
+
+@cli.command("enrich")
 @click.argument("group_name")
-@click.option("--output", default=None, help="Output CSV file path")
-def export(group_name, output):
-    """Export links for a group to CSV."""
+def enrich(group_name):
+    """Fetch title and description for unenriched links."""
     group = db.get_group_by_name(group_name)
     if not group:
         click.echo(f'Group "{group_name}" not found.')
         return
 
-    output_path, count = export_links_to_csv(group_name, output)
+    enriched = enrich_links(group["id"])
+    click.echo(f"\nEnriched {enriched} links with metadata.")
+
+
+@cli.command("export")
+@click.argument("group_name")
+@click.option("--output", default=None, help="Output file path")
+@click.option("--type", "link_type", default=None, help="Filter by link type (e.g., youtube)")
+@click.option("--sender", default=None, help="Filter by sender name (substring match)")
+@click.option("--after", default=None, help="Filter links after this date (YYYY-MM-DD)")
+@click.option("--before", default=None, help="Filter links before this date (YYYY-MM-DD)")
+@click.option("--domain", default=None, help="Filter by domain (substring match)")
+@click.option("--format", "fmt", type=click.Choice(["csv", "json"]), default="csv",
+              help="Output format")
+def export(group_name, output, link_type, sender, after, before, domain, fmt):
+    """Export links for a group to CSV or JSON."""
+    group = db.get_group_by_name(group_name)
+    if not group:
+        click.echo(f'Group "{group_name}" not found.')
+        return
+
+    output_path, count = export_links(
+        group_name, output_path=output, fmt=fmt,
+        link_type=link_type, sender=sender, after=after, before=before, domain=domain,
+    )
     click.echo(f"Exported {count} links to {output_path}")
+
+
+@cli.command("stats")
+@click.argument("group_name")
+def stats(group_name):
+    """Show statistics for a group."""
+    group = db.get_group_by_name(group_name)
+    if not group:
+        click.echo(f'Group "{group_name}" not found.')
+        return
+
+    group_id = group["id"]
+    summary = db.get_group_summary(group_id)
+
+    click.echo(f"Group: {group_name}")
+    click.echo(f"  Messages: {summary['message_count']} ({summary['system_count']} system)")
+    click.echo(f"  Links: {summary['link_count']}")
+    click.echo(f"  Contacts: {summary['contact_count']}")
+
+    # Top sharers
+    by_sender = db.get_link_stats_by_sender(group_id)
+    if by_sender:
+        click.echo("\nTop sharers:")
+        for row in by_sender:
+            label = "link" if row["count"] == 1 else "links"
+            click.echo(f"  {row['sender']:<20s} {row['count']} {label}")
+
+    # Link types
+    by_type = db.get_link_stats_by_type(group_id)
+    if by_type:
+        click.echo("\nLink types:")
+        for row in by_type:
+            click.echo(f"  {row['type']:<16s} {row['count']}")
+
+    # Top domains
+    by_domain = db.get_link_stats_by_domain(group_id)
+    if by_domain:
+        click.echo("\nTop domains:")
+        for row in by_domain:
+            click.echo(f"  {row['domain']:<24s} {row['count']}")
+
+
+@cli.command("reset")
+@click.argument("group_name")
+@click.option("--yes", is_flag=True, help="Skip confirmation prompt")
+def reset(group_name, yes):
+    """Delete all data for a group so it can be reimported fresh."""
+    group = db.get_group_by_name(group_name)
+    if not group:
+        click.echo(f'Group "{group_name}" not found.')
+        return
+
+    summary = db.get_group_summary(group["id"])
+    click.echo(f'Group "{group_name}": {summary["message_count"]} messages, '
+               f'{summary["link_count"]} links, {summary["contact_count"]} contacts')
+
+    if not yes:
+        click.confirm("Delete all data for this group?", abort=True)
+
+    db.delete_group_data(group["id"])
+    click.echo(f'Group "{group_name}" has been reset. You can now reimport.')
 
 
 @cli.command("groups")

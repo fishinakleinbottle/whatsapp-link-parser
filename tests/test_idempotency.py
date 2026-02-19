@@ -41,7 +41,7 @@ class TestIdempotency:
                     links = extract_links(msg.raw_text)
                     if links:
                         link_rows = [
-                            (message_id, link.url, link.domain, link.link_type)
+                            (message_id, link.url, link.domain, link.link_type, None)
                             for link in links
                         ]
                         db.insert_links_batch(conn, link_rows)

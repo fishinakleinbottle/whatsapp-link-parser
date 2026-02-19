@@ -1,9 +1,11 @@
+import json
+import os
 from typing import List
 from urllib.parse import urlparse
 
 from models import ExtractedLink
 
-LINK_TYPE_MAP = {
+_DEFAULT_LINK_TYPE_MAP = {
     "youtube.com": "youtube",
     "www.youtube.com": "youtube",
     "youtu.be": "youtube",
@@ -45,7 +47,41 @@ LINK_TYPE_MAP = {
     "www.tripadvisor.com": "travel",
 }
 
+# Cached merged map (built-in defaults + user overrides)
+_merged_link_type_map = None
+
 _url_extractor = None
+
+
+def _get_link_type_map():
+    """Load and cache the merged link type map.
+
+    Merges built-in defaults with user-provided link_types.json (if found in cwd).
+    User config wins on conflict.
+    """
+    global _merged_link_type_map
+    if _merged_link_type_map is not None:
+        return _merged_link_type_map
+
+    merged = dict(_DEFAULT_LINK_TYPE_MAP)
+
+    json_path = os.path.join(os.getcwd(), "link_types.json")
+    try:
+        with open(json_path, "r", encoding="utf-8") as f:
+            user_map = json.load(f)
+        if isinstance(user_map, dict):
+            merged.update(user_map)
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+
+    _merged_link_type_map = merged
+    return _merged_link_type_map
+
+
+def reset_link_type_cache():
+    """Reset the cached link type map (useful for testing)."""
+    global _merged_link_type_map
+    _merged_link_type_map = None
 
 
 def _get_extractor():
@@ -64,6 +100,8 @@ def _normalize_domain(domain):
 
 def _classify_url(url):
     """Classify a URL by its domain. Returns (domain, link_type)."""
+    link_type_map = _get_link_type_map()
+
     # Ensure the URL has a scheme for urlparse
     parsed_url = url
     if not url.startswith(("http://", "https://")):
@@ -73,13 +111,13 @@ def _classify_url(url):
     domain = parsed.hostname or ""
 
     # Try direct lookup first (handles subdomains like maps.app.goo.gl)
-    if domain in LINK_TYPE_MAP:
-        return domain, LINK_TYPE_MAP[domain]
+    if domain in link_type_map:
+        return domain, link_type_map[domain]
 
     # Try with www. stripped
     bare_domain = _normalize_domain(domain)
-    if bare_domain in LINK_TYPE_MAP:
-        return domain, LINK_TYPE_MAP[bare_domain]
+    if bare_domain in link_type_map:
+        return domain, link_type_map[bare_domain]
 
     return domain, "general"
 
