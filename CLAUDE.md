@@ -2,12 +2,12 @@
 
 ## Project overview
 
-`wa-link-parser` is a Python library + CLI for extracting, classifying, and enriching links from WhatsApp chat exports. It parses `.txt` exports into structured data, stores everything in SQLite, and exports filtered CSV/JSON.
+`whatsapp-link-parser` is a Python library + CLI for extracting, classifying, and enriching links from WhatsApp chat exports. It parses `.txt` exports into structured data, stores everything in SQLite, and exports filtered CSV/JSON.
 
 ## Architecture
 
 - **Package layout**: `wa_link_parser/` (flat, not src/)
-- **CLI**: `wa_link_parser/cli.py` — Click-based, entry point `wa-links` (defined in `pyproject.toml` under `[project.scripts]`)
+- **CLI**: `wa_link_parser/cli.py` — Click-based, entry points `whatsapp-links` and `wa-links` (defined in `pyproject.toml` under `[project.scripts]`)
 - **Library modules** have no Click dependency — they use callbacks (`on_progress`, `prompt_fn`) for progress/interaction
 
 ### Modules
@@ -84,3 +84,38 @@ setuptools.build_meta  # (not _legacy)
 - Contact resolution uses `prompt_fn` callback (not Click prompts)
 - DB functions return `sqlite3.Row` objects (support `row["key"]` access but not `.get()`)
 - Idempotent imports via message hash deduplication
+
+## PyPI release process
+
+```bash
+# 1. Bump version in pyproject.toml
+
+# 2. Build
+source venv/bin/activate
+rm -rf dist/
+python -m build
+
+# 3. Upload to TestPyPI
+twine upload --repository testpypi dist/*
+
+# 4. Test in a fresh directory
+mkdir /tmp/test-whatsapp-link-parser
+cd /tmp/test-whatsapp-link-parser
+python -m venv venv
+source venv/bin/activate
+pip install --index-url https://test.pypi.org/simple/ \
+  --extra-index-url https://pypi.org/simple/ \
+  whatsapp-link-parser
+python -c "from wa_link_parser import parse_chat_file, extract_links; print('import OK')"
+whatsapp-links --help
+wa-links --help
+deactivate
+
+# 5. Clean up test dir
+rm -rf /tmp/test-whatsapp-link-parser
+
+# 6. Upload to real PyPI
+cd /Users/sreeramramasubramanian/Learning/wa-link-parser
+source venv/bin/activate
+twine upload dist/*
+```

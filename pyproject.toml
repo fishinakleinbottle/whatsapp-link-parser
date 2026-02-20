@@ -3,8 +3,8 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "wa-link-parser"
-version = "0.2.1"
+name = "whatsapp-link-parser"
+version = "0.2.2"
 description = "Extract, classify, and enrich links from WhatsApp chat exports"
 readme = "README.md"
 license = "MIT"
@@ -40,12 +40,13 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/sreeramramasubramanian/wa-link-parser"
-Repository = "https://github.com/sreeramramasubramanian/wa-link-parser"
-Issues = "https://github.com/sreeramramasubramanian/wa-link-parser/issues"
+Homepage = "https://github.com/fishinakleinbottle/whatsapp-link-parser"
+Repository = "https://github.com/fishinakleinbottle/whatsapp-link-parser"
+Issues = "https://github.com/fishinakleinbottle/whatsapp-link-parser/issues"
 
 [project.scripts]
 wa-links = "wa_link_parser.cli:cli"
+whatsapp-links = "wa_link_parser.cli:cli"
 
 [tool.setuptools.packages.find]
 include = ["wa_link_parser*"]

@@ -1,4 +1,4 @@
-"""wa-link-parser: Extract, classify, and enrich links from WhatsApp chat exports."""
+"""whatsapp-link-parser: Extract, classify, and enrich links from WhatsApp chat exports."""
 
 from wa_link_parser.models import ParsedMessage, ExtractedLink, ImportStats
 from wa_link_parser.parser import parse_chat_file

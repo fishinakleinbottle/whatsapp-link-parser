@@ -1,12 +1,12 @@
-# wa-link-parser
+# whatsapp-link-parser
 
-[![PyPI version](https://img.shields.io/pypi/v/wa-link-parser)](https://pypi.org/project/wa-link-parser/)
-[![Python](https://img.shields.io/pypi/pyversions/wa-link-parser)](https://pypi.org/project/wa-link-parser/)
-[![License: MIT](https://img.shields.io/pypi/l/wa-link-parser)](https://github.com/sreeramramasubramanian/wa-link-parser/blob/main/LICENSE)
+[![PyPI version](https://img.shields.io/pypi/v/whatsapp-link-parser)](https://pypi.org/project/whatsapp-link-parser/)
+[![Python](https://img.shields.io/pypi/pyversions/whatsapp-link-parser)](https://pypi.org/project/whatsapp-link-parser/)
+[![License: MIT](https://img.shields.io/pypi/l/whatsapp-link-parser)](https://github.com/sreeramramasubramanian/whatsapp-link-parser/blob/main/LICENSE)
 
 **Turn WhatsApp chat exports into a searchable link catalog.**
 
-`wa-link-parser` takes a WhatsApp `.txt` export and extracts every URL -- classifying them by domain, fetching page titles and descriptions, and exporting everything to CSV or JSON. Works as a CLI tool or a Python library.
+`whatsapp-link-parser` takes a WhatsApp `.txt` export and extracts every URL -- classifying them by domain, fetching page titles and descriptions, and exporting everything to CSV or JSON. Works as a CLI tool or a Python library.
 
 ## Why this exists
 
@@ -39,18 +39,20 @@ Raw .txt file
 ## Installation
 
 ```bash
-pip install wa-link-parser
+pip install whatsapp-link-parser
 ```
 
 Or install from source:
 
 ```bash
-git clone https://github.com/sreeramramasubramanian/wa-link-parser.git
-cd wa-link-parser
+git clone https://github.com/sreeramramasubramanian/whatsapp-link-parser.git
+cd whatsapp-link-parser
 pip install -e .
 ```
 
 ## Quick start
+
+The CLI is available as both `whatsapp-links` and `wa-links`.
 
 Three commands, and you have a searchable link catalog:
 
@@ -83,7 +85,7 @@ wa-links export "Goa Trip 2025" --no-exclude  # include Zoom/Meet links too
 sender,date,link,domain,type,title,description,context
 Arjun,2025-10-12,https://www.youtube.com/watch?v=K3FnLas09mw,youtube.com,youtube,Best Beaches in South Goa 2025,A complete guide to Goa's hidden beaches...,guys check this out before we finalize
 Meera,2025-10-14,https://www.airbnb.co.in/rooms/52841379,airbnb.co.in,travel,Beachside Villa in Palolem,Entire villa · 4 beds · Pool,this one has a pool and is close to the beach
-Priya,2025-10-15,https://github.com/sreeramramasubramanian/wa-link-parser,github.com,code,wa-link-parser: Extract links from WhatsApp chats,Python library and CLI for...,use this to save all our links lol
+Priya,2025-10-15,https://github.com/sreeramramasubramanian/whatsapp-link-parser,github.com,code,whatsapp-link-parser: Extract links from WhatsApp chats,Python library and CLI for...,use this to save all our links lol
 ```
 
 **JSON** (`wa-links export "Goa Trip 2025" --format json`):
