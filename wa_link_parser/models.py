@@ -18,6 +18,7 @@ class ExtractedLink:
     url: str
     domain: str
     link_type: str       # from LINK_TYPE_MAP or "general"
+    raw_url: str = ""    # original URL before normalization
 
 
 @dataclass

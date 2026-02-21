@@ -41,7 +41,7 @@ class TestIdempotency:
                     links = extract_links(msg.raw_text)
                     if links:
                         link_rows = [
-                            (message_id, link.url, link.domain, link.link_type, None)
+                            (message_id, link.url, link.domain, link.link_type, None, link.raw_url)
                             for link in links
                         ]
                         db.insert_links_batch(conn, link_rows)
@@ -102,3 +102,46 @@ class TestIdempotency:
         h1 = db.compute_message_hash("2025-10-20T10:29:01", "Burhan", "Hello!")
         h2 = db.compute_message_hash("2025-10-20T10:29:01", "Burhan", "Hello!!")
         assert h1 != h2
+
+    def test_same_url_different_tracking_params_stored_as_separate_links(self, temp_db):
+        """Same canonical URL shared in two different messages → two link rows (one per message),
+        but both rows have the same normalized url value."""
+        group_id = db.get_or_create_group("TrackTest")
+
+        with db.get_connection() as conn:
+            contact_id = db.get_system_contact_id(conn)
+
+            msg_id_1 = db.insert_message(
+                conn, group_id, contact_id,
+                "2025-01-01T10:00:00", "msg1",
+                db.compute_message_hash("2025-01-01T10:00:00", "Alice", "msg1"),
+            )
+            msg_id_2 = db.insert_message(
+                conn, group_id, contact_id,
+                "2025-01-01T11:00:00", "msg2",
+                db.compute_message_hash("2025-01-01T11:00:00", "Bob", "msg2"),
+            )
+
+            url_with_utm = "https://example.com/page?utm_source=alice"
+            url_with_fbclid = "https://example.com/page?fbclid=bob123"
+            canonical = "https://example.com/page"
+
+            from wa_link_parser.normalizer import normalize_url
+            assert normalize_url(url_with_utm) == canonical
+            assert normalize_url(url_with_fbclid) == canonical
+
+            db.insert_links_batch(conn, [
+                (msg_id_1, canonical, "example.com", "general", None, url_with_utm),
+                (msg_id_2, canonical, "example.com", "general", None, url_with_fbclid),
+            ])
+
+        with db.get_connection() as conn:
+            rows = conn.execute(
+                "SELECT url, raw_url FROM link ORDER BY id"
+            ).fetchall()
+
+        assert len(rows) == 2
+        assert rows[0]["url"] == canonical
+        assert rows[1]["url"] == canonical
+        assert rows[0]["raw_url"] == url_with_utm
+        assert rows[1]["raw_url"] == url_with_fbclid

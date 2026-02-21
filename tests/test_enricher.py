@@ -96,7 +96,7 @@ class TestEnrichLinks:
                 "Check https://example.com", "hash123", False
             )
             db.insert_links_batch(conn, [
-                (msg_id, "https://example.com", "example.com", "general", None)
+                (msg_id, "https://example.com", "example.com", "general", None, None)
             ])
 
         html = "<html><head><title>Example</title></head><body></body></html>"
@@ -127,7 +127,7 @@ class TestEnrichLinks:
                 "Check https://example.com", "hash456", False
             )
             db.insert_links_batch(conn, [
-                (msg_id, "https://example.com", "example.com", "general", None)
+                (msg_id, "https://example.com", "example.com", "general", None, None)
             ])
             db.update_link_metadata(conn, 1, "Already Set", "Desc")
 

@@ -18,7 +18,7 @@ class TestGetExcludedDomains:
         domains = _get_excluded_domains()
         assert "meet.google.com" in domains
         assert "zoom.us" in domains
-        assert "bit.ly" in domains
+        assert "teams.microsoft.com" in domains
 
     def test_cache_returns_same_object(self):
         first = _get_excluded_domains()
@@ -52,11 +52,11 @@ class TestGetExcludedDomains:
         os.chdir(tmp_path)
         try:
             (tmp_path / "exclusions.json").write_text(
-                json.dumps(["!bit.ly"])
+                json.dumps(["!zoom.us"])
             )
             reset_exclusion_cache()
             domains = _get_excluded_domains()
-            assert "bit.ly" not in domains
+            assert "zoom.us" not in domains
             # other defaults still present
             assert "meet.google.com" in domains
         finally:
@@ -125,7 +125,7 @@ class TestFilterExcludedDomains:
         links = [
             {"domain": "meet.google.com", "link": "https://meet.google.com/abc"},
             {"domain": "youtube.com", "link": "https://youtube.com/1"},
-            {"domain": "bit.ly", "link": "https://bit.ly/xyz"},
+            {"domain": "zoom.us", "link": "https://zoom.us/j/123"},
         ]
         result = filter_excluded_domains(links, exclude_domains=None)
         assert len(result) == 1
@@ -154,9 +154,9 @@ def _setup_group_with_mixed_links(conn, group_id):
                            "Short link", "h3", False)
 
     db.insert_links_batch(conn, [
-        (m1, "https://youtube.com/watch?v=1", "youtube.com", "youtube", "context"),
-        (m2, "https://meet.google.com/abc-def", "meet.google.com", "other", "context"),
-        (m3, "https://bit.ly/xyz", "bit.ly", "other", "context"),
+        (m1, "https://youtube.com/watch?v=1", "youtube.com", "youtube", "context", None),
+        (m2, "https://meet.google.com/abc-def", "meet.google.com", "other", "context", None),
+        (m3, "https://zoom.us/j/abc123", "zoom.us", "other", "context", None),
     ])
 
 

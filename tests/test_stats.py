@@ -24,9 +24,9 @@ def _setup_group_with_data(conn, group_id):
                            "Travel stuff", "h3", False)
 
     db.insert_links_batch(conn, [
-        (m1, "https://youtube.com/watch?v=1", "youtube.com", "youtube", None),
-        (m2, "https://www.reddit.com/r/test", "www.reddit.com", "reddit", None),
-        (m3, "https://www.airbnb.com/rooms/1", "www.airbnb.com", "travel", None),
+        (m1, "https://youtube.com/watch?v=1", "youtube.com", "youtube", None, None),
+        (m2, "https://www.reddit.com/r/test", "www.reddit.com", "reddit", None, None),
+        (m3, "https://www.airbnb.com/rooms/1", "www.airbnb.com", "travel", None, None),
     ])
 
 

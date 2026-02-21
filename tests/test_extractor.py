@@ -25,6 +25,28 @@ class TestExtractLinks:
         assert len(links) == 1
         assert links[0].link_type == "general"
 
+    def test_raw_url_preserved(self):
+        """raw_url holds the original; url is the normalized form."""
+        raw = "https://example.com/page?utm_source=whatsapp"
+        links = extract_links(f"Check this {raw}")
+        assert len(links) == 1
+        assert links[0].raw_url == raw
+        assert "utm_source" not in links[0].url
+
+    def test_tracking_params_stripped_from_url(self):
+        links = extract_links("See https://youtu.be/dQw4w9WgXcQ?si=abc123")
+        assert len(links) == 1
+        assert "si=" not in links[0].url
+        assert "dQw4w9WgXcQ" in links[0].url
+
+    def test_same_url_different_tracking_deduped_within_message(self):
+        """Two URLs that normalize to the same thing should produce one ExtractedLink."""
+        text = ("https://example.com/page?utm_source=wa "
+                "https://example.com/page?utm_source=fb")
+        links = extract_links(text)
+        assert len(links) == 1
+        assert links[0].url == "https://example.com/page"
+
 
 class TestClassifyUrl:
     def test_youtube(self):

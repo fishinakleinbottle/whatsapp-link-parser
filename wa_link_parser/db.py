@@ -36,7 +36,7 @@ def _column_exists(conn, table, column):
 
 def _migrate_link_table(conn):
     """Add new columns to the link table if they don't exist."""
-    for col in ("title", "description", "context"):
+    for col in ("title", "description", "context", "raw_url"):
         if not _column_exists(conn, "link", col):
             conn.execute(f"ALTER TABLE link ADD COLUMN {col} TEXT")
 
@@ -86,6 +86,7 @@ def init_db():
                 title TEXT,
                 description TEXT,
                 context TEXT,
+                raw_url TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(message_id, url)
             );
@@ -248,9 +249,14 @@ def insert_message(conn, group_id, contact_id, timestamp, raw_text, message_hash
 
 
 def insert_links_batch(conn, links):
-    """Insert multiple links. links is a list of tuples (message_id, url, domain, link_type, context)."""
+    """Insert multiple links.
+
+    Each element of links must be a tuple:
+        (message_id, url, domain, link_type, context, raw_url)
+    where url is the normalized URL and raw_url is the original.
+    """
     conn.executemany(
-        "INSERT OR IGNORE INTO link (message_id, url, domain, link_type, context) VALUES (?, ?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO link (message_id, url, domain, link_type, context, raw_url) VALUES (?, ?, ?, ?, ?, ?)",
         links
     )
 

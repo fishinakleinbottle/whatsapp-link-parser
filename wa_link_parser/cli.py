@@ -163,7 +163,7 @@ def import_chat(file_path, group_name, do_enrich):
                     if links:
                         context = _build_context(messages, idx)
                         link_rows = [
-                            (message_id, link.url, link.domain, link.link_type, context)
+                            (message_id, link.url, link.domain, link.link_type, context, link.raw_url)
                             for link in links
                         ]
                         db.insert_links_batch(conn, link_rows)
@@ -223,7 +223,9 @@ def enrich(group_name):
 @click.option("--format", "fmt", type=click.Choice(["csv", "json"]), default="csv",
               help="Output format")
 @click.option("--no-exclude", is_flag=True, help="Disable default domain exclusions")
-def export(group_name, output, link_type, sender, after, before, domain, fmt, no_exclude):
+@click.option("--dedup", is_flag=True,
+              help="Deduplicate: one row per URL, adds 'Times Shared' count")
+def export(group_name, output, link_type, sender, after, before, domain, fmt, no_exclude, dedup):
     """Export links for a group to CSV or JSON."""
     group = db.get_group_by_name(group_name)
     if not group:
@@ -234,7 +236,7 @@ def export(group_name, output, link_type, sender, after, before, domain, fmt, no
     output_path, count = export_links(
         group_name, output_path=output, fmt=fmt,
         link_type=link_type, sender=sender, after=after, before=before, domain=domain,
-        exclude_domains=exclude_domains,
+        exclude_domains=exclude_domains, dedup=dedup,
     )
     click.echo(f"Exported {count} links to {output_path}")
 

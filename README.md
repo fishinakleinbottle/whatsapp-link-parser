@@ -53,6 +53,7 @@ wa-links export "Name" --type youtube --format json
 wa-links export "Name" --sender "Alice" --after 2025-10-01 --before 2025-11-01
 wa-links export "Name" --domain airbnb
 wa-links export "Name" --no-exclude        # include Zoom/Meet links too
+wa-links export "Name" --dedup             # one row per URL, adds "Times Shared" column
 ```
 
 | Flag | Description |
@@ -64,6 +65,7 @@ wa-links export "Name" --no-exclude        # include Zoom/Meet links too
 | `--domain` | Filter by domain (substring match) |
 | `--format` | `csv` (default) or `json` |
 | `--no-exclude` | Disable default domain exclusions |
+| `--dedup` | Deduplicate by URL; adds `Times Shared` count column |
 
 ## Library usage
 
@@ -87,13 +89,14 @@ export_links("Goa Trip 2025", exclude_domains=["zoom.us"])         # custom list
 | `parse_chat_file(path)` | Parse a `.txt` export → `ParsedMessage` list |
 | `extract_links(text)` | Extract URLs from text → `ExtractedLink` list |
 | `classify_url(url)` | Classify a URL by domain → link type string |
+| `normalize_url(url)` | Strip tracking params and canonicalize a URL |
 | `fetch_metadata(url)` | Fetch page title and OG description |
 | `enrich_links(group_id)` | Enrich all unenriched links for a group |
-| `export_links(group, ...)` | Export with filters and exclusions |
+| `export_links(group, ...)` | Export with filters, exclusions, and optional dedup |
 | `filter_excluded_domains(links, ...)` | Filter by domain exclusion list |
 | `reset_exclusion_cache()` | Clear cached exclusions (for testing) |
 
-Data classes: `ParsedMessage` (`timestamp`, `sender`, `raw_text`, `is_system`), `ExtractedLink` (`url`, `domain`, `link_type`), `ImportStats`.
+Data classes: `ParsedMessage` (`timestamp`, `sender`, `raw_text`, `is_system`), `ExtractedLink` (`url`, `domain`, `link_type`, `raw_url`), `ImportStats`.
 
 ## Configuration
 

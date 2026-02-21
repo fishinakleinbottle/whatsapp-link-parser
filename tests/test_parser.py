@@ -6,7 +6,7 @@ from wa_link_parser.parser import parse_chat_file
 class TestParser:
     def test_parses_all_messages(self, sample_chat_path):
         messages = parse_chat_file(sample_chat_path)
-        # 32 lines: 3 system (lines 1, 18, 28) + 24 regular messages
+        # 31 lines: 3 system (lines 1, 18, 28) + 24 regular messages
         # Lines 10-11 are continuations of line 9; lines 30-31 are continuations of line 29
         assert len(messages) == 27
 

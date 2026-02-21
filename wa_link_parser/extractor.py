@@ -5,6 +5,7 @@ from typing import List
 from urllib.parse import urlparse
 
 from wa_link_parser.models import ExtractedLink
+from wa_link_parser.normalizer import normalize_url
 
 _DEFAULT_LINK_TYPE_MAP = {
     "youtube.com": "youtube",
@@ -132,16 +133,27 @@ _classify_url = classify_url
 
 
 def extract_links(text: str) -> List[ExtractedLink]:
-    """Extract all URLs from text and classify them by domain.
+    """Extract all URLs from text, normalize them, and classify by domain.
 
-    Returns a list of ExtractedLink objects, each with url, domain, and link_type.
+    Returns a list of ExtractedLink objects. Each has:
+    - url: normalized form (tracking params stripped, scheme upgraded, domain lowercased)
+    - raw_url: original URL as it appeared in the text
+    - domain, link_type: from classification
+
+    URLs that normalize to the same canonical form within a single message are
+    deduplicated (only the first raw occurrence is kept).
     """
     extractor = _get_extractor()
     urls = extractor.find_urls(text, only_unique=True)
 
     results = []
-    for url in urls:
-        domain, link_type = classify_url(url)
-        results.append(ExtractedLink(url=url, domain=domain, link_type=link_type))
+    seen_normalized = set()
+    for raw_url in urls:
+        normalized = normalize_url(raw_url)
+        if normalized in seen_normalized:
+            continue
+        seen_normalized.add(normalized)
+        domain, link_type = classify_url(normalized)
+        results.append(ExtractedLink(url=normalized, domain=domain, link_type=link_type, raw_url=raw_url))
 
     return results
