@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "whatsapp-link-parser"
-version = "0.2.2"
+version = "0.2.3"
 description = "Extract, classify, and enrich links from WhatsApp chat exports"
 readme = "README.md"
 license = "MIT"
